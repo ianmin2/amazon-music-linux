@@ -1,16 +1,19 @@
 {
     "name": "amazon-music-linux",
     "productName": "Amazon Music",
-    "version": "1.5.6",
-    "main": "./main.js",
+    "version": "2.0.0",
+    "main": "./dist/main.js",
     "description": "unofficial amazon music player for linux",
     "scripts": {
-        "build": "tsc",
+        "clean": "rimraf dist release-builds",
+        "build": "tsc && npm run copy-assets",
+        "copy-assets": "copyfiles -u 1 \"src/**/*.html\" \"src/**/*.css\" dist && copyfiles \"assets/*\" dist",
         "watch": "tsc -w",
-        "lint": "tslint -c tslint.json -p tsconfig.json",
-        "start": "npm run build && npm run html && electron ./dist/main.js",
-        "html": "copyfiles **/*.html ./dist",
-        "package-linux": "npm run build && npm run html && copyfiles *.so *.json ./dist && copyfiles **/*.png ./dist && cd dist && npm install && electron-packager . amazon-music-linux --overwrite --asar --platform=linux --arch=x64 --icon=../assets/favicon.png --extra-resource=../assets/favicon.png --prune=true --out=../release-builds --download.mirrorOptions.mirror=https://github.com/castlabs/electron-releases/releases/download/"
+        "lint": "tsc --noEmit",
+        "start": "npm run build && electron .",
+        "package-linux": "npm run build && electron-packager . amazon-music-linux --overwrite --asar --platform=linux --arch=x64 --icon=assets/favicon.png --prune=true --out=release-builds --ignore=\"^/(src|release-builds|\\.github|\\.git)\" --download.mirrorOptions.mirror=https://github.com/castlabs/electron-releases/releases/download/",
+        "sign-linux": "python3 -m castlabs_evs.vmp sign-pkg release-builds/amazon-music-linux-linux-x64",
+        "dist-linux": "npm run package-linux && npm run sign-linux"
     },
     "repository": {
         "type": "git",
@@ -29,24 +32,14 @@
     },
     "homepage": "https://github.com/espaker/amazon-music-linux#readme",
     "dependencies": {
-        "@types/electron-is-dev": "^0.3.0",
-        "@types/electron-settings": "^3.1.1",
-        "@types/express": "^4.16.0",
-        "@types/request": "^2.47.1",
-        "@types/socket.io": "^1.4.38",
-        "electron-is-dev": "^0.3.0",
-        "electron-settings": "^3.2.0",
-        "express": "^4.16.3",
-        "path": "^0.12.7",
-        "request": "^2.88.0",
-        "socket.io": "^2.1.1",
-        "url": "^0.11.0"
+        "socket.io": "^4.8.3"
     },
     "devDependencies": {
-        "copyfiles": "^2.1.0",
-        "electron": "https://github.com/castlabs/electron-releases#v9.2.0-wvvmp",
-        "electron-packager": "^14.2.1",
-        "tslint": "^5.10.0",
-        "typescript": "^3.9.2"
+        "@types/node": "^22.20.1",
+        "copyfiles": "^2.4.1",
+        "electron": "github:castlabs/electron-releases#v43.0.0+wvcus",
+        "@electron/packager": "^20.0.4",
+        "rimraf": "^6.0.1",
+        "typescript": "^5.9.3"
     }
 }

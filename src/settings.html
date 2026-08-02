@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'none';">
+    <title>Amazon Music — Settings</title>
+    <link rel="stylesheet" href="settings.css">
+</head>
+
+<body>
+    <main>
+        <section>
+            <h2>Storefront</h2>
+            <label class="row" for="region">
+                <span>Region</span>
+                <select id="region"></select>
+            </label>
+            <p class="hint" id="region-hint"></p>
+        </section>
+
+        <section>
+            <h2>Window</h2>
+            <label class="row" for="close-to-tray">
+                <span>Closing the window hides it to the tray</span>
+                <input type="checkbox" id="close-to-tray">
+            </label>
+        </section>
+
+        <section>
+            <h2>Media keys</h2>
+            <label class="row" for="global-media-keys">
+                <span>Grab media keys application-wide</span>
+                <input type="checkbox" id="global-media-keys">
+            </label>
+            <p class="hint">
+                Leave this off on Wayland and on GNOME/KDE: the desktop already routes media keys
+                through MPRIS. Turn it on only if media keys do nothing (typically bare X11 setups).
+                Enabling both can make each keypress register twice.
+            </p>
+        </section>
+
+        <section>
+            <h2>Companion app server</h2>
+            <label class="row" for="server-enabled">
+                <span>Enable the companion server</span>
+                <input type="checkbox" id="server-enabled">
+            </label>
+            <label class="row" for="server-host">
+                <span>Listen on</span>
+                <select id="server-host">
+                    <option value="127.0.0.1">This machine only (127.0.0.1)</option>
+                    <option value="0.0.0.0">All interfaces (0.0.0.0)</option>
+                </select>
+            </label>
+            <label class="row" for="server-port">
+                <span>Port</span>
+                <input type="number" id="server-port" min="1024" max="65535" step="1">
+            </label>
+            <label class="row" for="server-token">
+                <span>Pairing token</span>
+                <input type="text" id="server-token" readonly>
+            </label>
+            <p class="hint">
+                The companion app must send this token when it connects. Choosing
+                <em>All interfaces</em> lets any device on your network control playback and read
+                the current track, so only do that on a network you trust.
+            </p>
+        </section>
+
+        <p class="status" id="status" role="status"></p>
+    </main>
+
+    <script src="settings-renderer.js"></script>
+</body>
+
+</html>
