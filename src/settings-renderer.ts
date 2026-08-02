@@ -16,6 +16,8 @@ interface SettingsPayload {
   };
   regions: ReadonlyArray<{ id: string; label: string }>;
   resolvedRegion: string;
+  trayAvailable: boolean;
+  noTrayAdvice: string;
 }
 
 declare const settingsApi: {
@@ -35,6 +37,7 @@ declare const settingsApi: {
   const regionSelect = byId<HTMLSelectElement>("region");
   const regionHint = byId<HTMLParagraphElement>("region-hint");
   const closeToTray = byId<HTMLInputElement>("close-to-tray");
+  const trayHint = byId<HTMLParagraphElement>("tray-hint");
   const globalMediaKeys = byId<HTMLInputElement>("global-media-keys");
   const serverEnabled = byId<HTMLInputElement>("server-enabled");
   const serverHost = byId<HTMLSelectElement>("server-host");
@@ -75,6 +78,10 @@ declare const settingsApi: {
     regionHint.textContent = `Currently using music.amazon.${resolvedRegion}`;
 
     closeToTray.checked = settings.closeToTray;
+    // Without a tray host the setting cannot be honoured, so say so rather than
+    // letting the user hide the window into nothing.
+    closeToTray.disabled = !payload.trayAvailable;
+    trayHint.textContent = payload.trayAvailable ? "" : payload.noTrayAdvice;
     globalMediaKeys.checked = settings.globalMediaKeys;
     serverEnabled.checked = settings.companionServer.enabled;
     serverHost.value = settings.companionServer.host;

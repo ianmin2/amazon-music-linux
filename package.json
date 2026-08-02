@@ -1,7 +1,7 @@
 {
     "name": "amazon-music-linux",
     "productName": "Amazon Music",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "main": "./dist/main.js",
     "description": "unofficial amazon music player for linux",
     "scripts": {
@@ -11,7 +11,11 @@
         "watch": "tsc -w",
         "lint": "tsc --noEmit",
         "start": "npm run build && electron .",
-        "package-linux": "npm run build && electron-packager . amazon-music-linux --overwrite --asar --platform=linux --arch=x64 --icon=assets/favicon.png --prune=true --out=release-builds --ignore=\"^/(src|release-builds|\\.github|\\.git)\" --download.mirrorOptions.mirror=https://github.com/castlabs/electron-releases/releases/download/"
+        "package-linux": "npm run build && electron-packager . amazon-music-linux --overwrite --asar --platform=linux --arch=x64 --icon=assets/favicon.png --prune=true --out=release-builds --ignore=\"^/(src|release-builds|build|\\.github|\\.git)\" --download.mirrorOptions.mirror=https://github.com/castlabs/electron-releases/releases/download/",
+        "deb": "electron-installer-debian --src release-builds/amazon-music-linux-linux-x64/ --arch amd64 --config build-config.json",
+        "rpm": "electron-installer-redhat --src release-builds/amazon-music-linux-linux-x64/ --arch x86_64 --config build-config.json",
+        "dist-deb": "npm run package-linux && npm run deb",
+        "dist-rpm": "npm run package-linux && npm run rpm"
     },
     "repository": {
         "type": "git",
@@ -37,6 +41,8 @@
         "copyfiles": "^2.4.1",
         "electron": "github:castlabs/electron-releases#v43.0.0+wvcus",
         "@electron/packager": "^20.0.4",
+        "electron-installer-debian": "^4.0.0",
+        "electron-installer-redhat": "^4.0.0",
         "rimraf": "^6.0.1",
         "typescript": "^5.9.3"
     }

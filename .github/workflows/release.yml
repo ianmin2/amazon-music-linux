@@ -1,0 +1,115 @@
+name: Build Linux packages
+
+on:
+  # Attach packages to a release as soon as you publish it.
+  release:
+    types: [published]
+  # Build without publishing, e.g. to check a change to the packaging config.
+  workflow_dispatch:
+  # Sanity-check packaging on pull requests that touch it.
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "build-config.json"
+      - "build/**"
+      - ".github/workflows/release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build .deb and .rpm
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # @electron/packager requires >= 22.12.
+          node-version: "22"
+          cache: npm
+
+      # castLabs' Electron is a ~200 MB download; caching keeps reruns quick.
+      - name: Cache Electron download
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          # dpkg/fakeroot for electron-installer-debian, rpm for -redhat.
+          sudo apt-get install --no-install-recommends -y fakeroot dpkg-dev rpm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run lint
+
+      # The release tag is the source of truth for the version, so the built
+      # filenames cannot drift from the tag they are attached to.
+      - name: Align version with release tag
+        if: github.event_name == 'release'
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          CURRENT=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$CURRENT" ]; then
+            echo "Setting version to $TAG (package.json had $CURRENT)"
+            npm version "$TAG" --no-git-tag-version --allow-same-version
+          fi
+
+      - name: Build application bundle
+        run: npm run package-linux
+
+      - name: Build .deb
+        run: npm run deb
+
+      - name: Build .rpm
+        run: npm run rpm
+
+      - name: Verify package contents
+        run: |
+          set -euo pipefail
+          DEB=$(ls release-builds/*.deb)
+          echo "::group::Desktop entry"
+          dpkg-deb -I "$DEB" >/dev/null
+          mkdir -p /tmp/debcheck && dpkg-deb -x "$DEB" /tmp/debcheck
+          cat /tmp/debcheck/usr/share/applications/amazon-music-linux.desktop
+          echo "::endgroup::"
+
+          # The dock falls back to a generic icon unless these are present, so
+          # fail the build rather than shipping a package that looks broken.
+          echo "Checking hicolor icons..."
+          for size in 16x16 22x22 24x24 32x32 48x48 64x64 128x128 256x256 512x512; do
+            path="/tmp/debcheck/usr/share/icons/hicolor/$size/apps/amazon-music-linux.png"
+            test -f "$path" || { echo "::error::missing icon $size"; exit 1; }
+          done
+
+          grep -q '^StartupWMClass=amazon-music-linux$' \
+            /tmp/debcheck/usr/share/applications/amazon-music-linux.desktop \
+            || { echo "::error::StartupWMClass does not match the .desktop basename"; exit 1; }
+
+          echo "All packaging checks passed."
+          ls -la release-builds/*.deb release-builds/*.rpm
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            release-builds/*.deb
+            release-builds/*.rpm
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach packages to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" release-builds/*.deb release-builds/*.rpm --clobber

@@ -25,23 +25,39 @@ that it is cached under the app's user-data directory.
 
 ## Building a package
 
+For a `.deb` in one step:
+
 ```
-npm run package-linux
+npm run dist-deb
 ```
 
-That compiles and bundles with `@electron/packager`. The output lands in `release-builds/`.
+For a `.rpm` in one step:
 
-Then, for a distro package:
+```
+npm run dist-rpm
+```
 
-- Ubuntu/Debian:
-  ```
-  npx electron-installer-debian --src release-builds/amazon-music-linux-linux-x64/ --arch amd64 --config build-config.json
-  ```
+The individual stages, if you need them separately:
 
-- Fedora/openSUSE:
-  ```
-  npx electron-installer-redhat --src release-builds/amazon-music-linux-linux-x64/ --arch x86_64 --config build-config.json
-  ```
+| Script | Produces |
+| --- | --- |
+| `npm run package-linux` | `release-builds/amazon-music-linux-linux-x64/` — an unpacked app directory, **not** an installable package |
+| `npm run deb` | `release-builds/amazon-music-linux_<version>_amd64.deb` |
+| `npm run rpm` | `release-builds/amazon-music-linux-<version>.x86_64.rpm` (needs `rpmbuild` installed) |
+
+`deb` and `rpm` both consume the directory that `package-linux` produces, so run that first.
+
+### Releasing
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) builds both packages in CI.
+Publish a GitHub release tagged `vX.Y.Z` and the workflow will build the `.deb` and `.rpm` and
+attach them to it. The tag is treated as the source of truth for the version, so the filenames can
+never drift from the tag they hang off — you do not have to remember to bump `package.json` first.
+
+It also runs on `workflow_dispatch` (build without publishing, artifacts retained for 14 days) and
+on pull requests that touch the packaging config. Before uploading anything it asserts that all nine
+hicolor icon sizes are present and that `StartupWMClass` matches the `.desktop` basename, so a
+regression in the dock icon fails the build instead of shipping.
 
 ### A note on VMP signing
 
@@ -86,6 +102,26 @@ your network, so only do that on a network you trust.
   ready:`. If component installation failed, the CDM could not be downloaded; it needs network
   access on first launch. This is *not* a signing problem — see
   [A note on VMP signing](#a-note-on-vmp-signing).
+- **No tray icon / the app seems to vanish when closed** — GNOME has shipped no system tray since
+  3.26, and Electron's tray icon only appears if something implements the StatusNotifierItem spec.
+  On Ubuntu GNOME that is the AppIndicator extension, which ships installed but is not always
+  enabled:
+  ```
+  gnome-extensions enable ubuntu-appindicators@ubuntu.com
+  ```
+  The app probes for a tray host at startup. If none is found it logs a warning, skips the tray icon
+  and makes closing the window quit, so it can never hide somewhere invisible. You can always quit
+  with **Ctrl+Q**, *File → Quit*, or *Window → Quit*.
+- **The dock shows a generic gear instead of the app icon** — the window's `StartupWMClass` must
+  match the `.desktop` filename, and the icon must be installed into the hicolor theme (a lone
+  `/usr/share/pixmaps` entry is not enough for GNOME docks). Both are handled by the packaging
+  config; if you are upgrading from an older build, reinstall the `.deb` to pick them up.
+- **Asked to sign in on every launch** — Amazon serves the storefront that matches your *account*,
+  which is not necessarily the one your system locale implies; a UK account on an `en_US` system
+  gets sent to `music.amazon.com` and bounced to `co.uk`, re-running sign-in each time. With region
+  set to *Detect from system locale*, the app now remembers where Amazon actually redirected it and
+  goes straight there next launch. You can also just pick your storefront explicitly in Settings.
+  Signing out on quit can also mean the app was killed rather than quit — see below.
 - **Media keys or tray buttons do nothing** — Amazon changes the player's DOM regularly. Run
   **Playback → Dump Player Diagnostics to Log** from the menu bar and open an issue with the output;
   it lists every control the app can currently see.

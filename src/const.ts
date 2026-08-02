@@ -95,6 +95,18 @@ export function regionFromLocale(locale: string): string {
   return LANGUAGE_TO_REGION[language] ?? "com";
 }
 
+/**
+ * Extract the storefront from a `music.amazon.*` hostname, or null if it is not
+ * a storefront we know. Used to remember where Amazon actually redirected us.
+ */
+export function regionFromHost(hostname: string): string | null {
+  const match = /^music\.amazon\.(.+)$/.exec(hostname.toLowerCase());
+  if (!match) {
+    return null;
+  }
+  return REGION_IDS.has(match[1]) ? match[1] : null;
+}
+
 export function musicUrlForRegion(region: string): string {
   const id = REGION_IDS.has(region) ? region : "com";
   return `https://music.amazon.${id}/`;

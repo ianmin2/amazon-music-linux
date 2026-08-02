@@ -34,7 +34,16 @@ import {
 import * as path from "node:path";
 
 import { CompanionServer, type CompanionCommand } from "./companion-server";
-import { APP_NAME, isAllowedArtworkUrl, isAllowedNavigation, musicUrlForRegion, regionFromLocale, REGIONS } from "./const";
+import { hasSystemTray, NO_TRAY_ADVICE } from "./desktop-integration";
+import {
+  APP_NAME,
+  isAllowedArtworkUrl,
+  isAllowedNavigation,
+  musicUrlForRegion,
+  regionFromHost,
+  regionFromLocale,
+  REGIONS,
+} from "./const";
 import {
   flush as flushSettings,
   getSettings,
@@ -66,6 +75,8 @@ let settingsWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let trayBaseImage: NativeImage | null = null;
 let isQuitting = false;
+/** False when no StatusNotifierItem host exists, i.e. a tray icon would be invisible. */
+let trayAvailable = true;
 
 let currentTrack: TrackInfo | null = null;
 let isPlaying = false;
@@ -81,6 +92,12 @@ const companion = new CompanionServer();
 // interface, which is what makes the GNOME/KDE "now playing" widget and media
 // keys work under Wayland, where `globalShortcut` is a no-op.
 app.commandLine.appendSwitch("enable-features", "HardwareMediaKeyHandling,MediaSessionService");
+
+// Pin the X11 WM_CLASS / Wayland app_id to the .desktop file's basename. Without
+// this the window reports a name that does not match `StartupWMClass`, so docks
+// and GNOME Shell cannot associate it with amazon-music-linux.desktop and fall
+// back to a generic gear icon.
+app.commandLine.appendSwitch("class", "amazon-music-linux");
 
 /* ------------------------------------------------------------------ *
  * Single instance
@@ -110,11 +127,18 @@ async function bootstrap(): Promise<void> {
     console.error("[widevine] component installation failed — playback will not work:", error);
   }
 
+  trayAvailable = await hasSystemTray();
+  if (!trayAvailable) {
+    console.warn(`[tray] ${NO_TRAY_ADVICE}`);
+  }
+
   configureSession();
   hardenWebContents();
   buildApplicationMenu();
   createMainWindow(settings);
-  createTray();
+  if (trayAvailable) {
+    createTray();
+  }
   applyGlobalShortcuts(settings);
   await restartCompanionServer(settings);
 }
@@ -193,7 +217,34 @@ function hardenWebContents(): void {
  * ------------------------------------------------------------------ */
 
 function resolvedRegion(settings: Readonly<AppSettings>): string {
-  return settings.region === "auto" ? regionFromLocale(app.getLocale()) : settings.region;
+  if (settings.region !== "auto") {
+    return settings.region;
+  }
+  // Prefer where Amazon actually sent us over a guess from the system locale.
+  return settings.learnedRegion || regionFromLocale(app.getLocale());
+}
+
+/**
+ * Amazon redirects to the storefront that matches the *account*, not the system
+ * locale. Remember that, so the next launch goes straight there instead of
+ * bouncing through the wrong domain and re-running sign-in.
+ */
+function rememberStorefront(rawUrl: string): void {
+  const settings = getSettings();
+  if (settings.region !== "auto") {
+    return;
+  }
+  let hostname: string;
+  try {
+    hostname = new URL(rawUrl).hostname;
+  } catch {
+    return;
+  }
+  const region = regionFromHost(hostname);
+  if (region && region !== settings.learnedRegion) {
+    console.log(`[region] Amazon served the "${region}" storefront; remembering it for next launch`);
+    updateSettings({ learnedRegion: region });
+  }
 }
 
 function createMainWindow(settings: Readonly<AppSettings>): void {
@@ -205,7 +256,10 @@ function createMainWindow(settings: Readonly<AppSettings>): void {
     title: APP_NAME,
     icon: ICON_PATH,
     backgroundColor: "#15161a",
-    autoHideMenuBar: true,
+    // GNOME's default `button-layout` is `appmenu:close`, so the titlebar offers
+    // no minimize or maximize button. Keep the menu bar visible so those actions
+    // are always reachable; View → Toggle Menu Bar hides it again.
+    autoHideMenuBar: false,
     webPreferences: {
       preload: MUSIC_PRELOAD,
       contextIsolation: true,
@@ -228,16 +282,27 @@ function createMainWindow(settings: Readonly<AppSettings>): void {
     }
   });
 
+  mainWindow.webContents.on("did-navigate", (_event, url) => rememberStorefront(url));
+
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     console.error("[window] renderer gone:", details.reason);
   });
 
   mainWindow.on("close", (event) => {
-    if (!isQuitting && getSettings().closeToTray) {
+    // Only hide if there is somewhere visible to hide *to*. With no tray host
+    // the window would vanish with no icon and no way back, which is how this
+    // app previously became unkillable from the desktop.
+    if (!isQuitting && getSettings().closeToTray && trayAvailable) {
       event.preventDefault();
       mainWindow?.hide();
+      return;
     }
+    isQuitting = true;
   });
+
+  // Keeps the tray's Maximize/Restore label in step with the actual window state.
+  mainWindow.on("maximize", refreshTrayMenu);
+  mainWindow.on("unmaximize", refreshTrayMenu);
 
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -292,6 +357,33 @@ function openSettingsWindow(): void {
   });
 }
 
+/** Menu actions apply to whichever window has focus, falling back to the player. */
+function targetWindow(): BrowserWindow | null {
+  return BrowserWindow.getFocusedWindow() ?? mainWindow;
+}
+
+function toggleMaximize(): void {
+  const window = targetWindow();
+  if (!window) {
+    return;
+  }
+  if (window.isMaximized()) {
+    window.unmaximize();
+  } else {
+    window.maximize();
+  }
+}
+
+function toggleMenuBar(): void {
+  const window = targetWindow();
+  if (!window) {
+    return;
+  }
+  const hidden = !window.isMenuBarVisible();
+  window.setAutoHideMenuBar(!hidden);
+  window.setMenuBarVisibility(hidden);
+}
+
 function buildApplicationMenu(): void {
   // `setMenu(null)` cost the app clipboard, zoom and reload accelerators. The
   // menu bar is auto-hidden, so it stays out of the way but the keys work.
@@ -328,6 +420,25 @@ function buildApplicationMenu(): void {
         { type: "separator" },
         { role: "togglefullscreen" },
         { role: "toggleDevTools" },
+        { type: "separator" },
+        { label: "Toggle Menu Bar", accelerator: "Ctrl+Shift+M", click: toggleMenuBar },
+      ],
+    },
+    {
+      label: "Window",
+      submenu: [
+        { label: "Minimize", accelerator: "CmdOrCtrl+M", click: () => targetWindow()?.minimize() },
+        { label: "Maximize", click: () => targetWindow()?.maximize() },
+        { label: "Restore", click: () => targetWindow()?.unmaximize() },
+        { label: "Maximize/Restore", accelerator: "CmdOrCtrl+Shift+Up", click: toggleMaximize },
+        { type: "separator" },
+        { label: "Full Screen", accelerator: "F11", role: "togglefullscreen" },
+        { type: "separator" },
+        // Pointless — and a trap — when nothing can render a tray icon.
+        { label: "Hide to Tray", click: () => mainWindow?.hide(), enabled: trayAvailable },
+        { label: "Close Window", accelerator: "CmdOrCtrl+W", role: "close" },
+        { type: "separator" },
+        { label: "Quit", accelerator: "CmdOrCtrl+Q", click: quitApplication },
       ],
     },
     {
@@ -369,6 +480,20 @@ function refreshTrayMenu(): void {
       { label: nowPlaying.slice(0, 96), enabled: false },
       { type: "separator" },
       { label: "Show/Hide Window", click: toggleMainWindow },
+      {
+        label: "Minimize",
+        click: () => mainWindow?.minimize(),
+        enabled: mainWindow !== null,
+      },
+      {
+        label: mainWindow?.isMaximized() ? "Restore" : "Maximize",
+        click: () => {
+          showMainWindow();
+          toggleMaximize();
+        },
+        enabled: mainWindow !== null,
+      },
+      { type: "separator" },
       { label: isPlaying ? "Pause" : "Play", click: () => sendControl("playPause") },
       { label: "Next Track", click: () => sendControl("next") },
       { label: "Previous Track", click: () => sendControl("previous") },
@@ -543,6 +668,8 @@ ipcMain.handle("settings:get", (event) => {
     settings,
     regions: REGIONS,
     resolvedRegion: resolvedRegion(settings),
+    trayAvailable,
+    noTrayAdvice: NO_TRAY_ADVICE,
   };
 });
 
@@ -608,7 +735,23 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  // Cookies are written lazily; force them out before the process goes away.
+  void session.defaultSession.cookies.flushStore();
 });
+
+/**
+ * Without these, a `SIGTERM` (pkill, a logout, systemd) kills the process
+ * outright. Chromium never runs its shutdown path, so localStorage/IndexedDB —
+ * where Amazon Music keeps its session — are never committed, and the next
+ * launch asks you to sign in again. Routing signals through `app.quit()` gives
+ * Chromium the chance to flush.
+ */
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  process.on(signal, () => {
+    console.log(`[lifecycle] received ${signal}, shutting down cleanly`);
+    quitApplication();
+  });
+}
 
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();

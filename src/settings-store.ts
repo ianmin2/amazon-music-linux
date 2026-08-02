@@ -31,6 +31,13 @@ export interface CompanionServerSettings {
 export interface AppSettings {
   /** "auto" or a storefront id from `REGIONS`. */
   region: string;
+  /**
+   * The storefront Amazon last actually served us, remembered so that "auto"
+   * stops guessing from the system locale once we know better. A UK account on
+   * an en_US system would otherwise be sent to music.amazon.com every launch and
+   * bounced to co.uk, re-running sign-in each time.
+   */
+  learnedRegion: string;
   /** Hide to tray on window close instead of quitting. */
   closeToTray: boolean;
   /**
@@ -44,6 +51,7 @@ export interface AppSettings {
 
 const DEFAULTS: AppSettings = {
   region: "auto",
+  learnedRegion: "",
   closeToTray: true,
   globalMediaKeys: false,
   companionServer: {
@@ -98,6 +106,10 @@ function sanitize(raw: unknown): AppSettings {
 
   return {
     region,
+    learnedRegion:
+      typeof input.learnedRegion === "string" && REGION_IDS.has(input.learnedRegion)
+        ? input.learnedRegion
+        : DEFAULTS.learnedRegion,
     closeToTray: asBoolean(input.closeToTray, DEFAULTS.closeToTray),
     globalMediaKeys: asBoolean(input.globalMediaKeys, DEFAULTS.globalMediaKeys),
     companionServer: {

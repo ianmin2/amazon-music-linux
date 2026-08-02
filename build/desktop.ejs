@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+<% if (productName) { %>Name=<%= productName %>
+<% } %><% if (genericName) { %>GenericName=<%= genericName %>
+<% } %><% if (description) { %>Comment=<%= description %>
+<% } %><% if (name) { %>Exec=<%= name %> %U
+Icon=<%= name %>
+StartupWMClass=<%= name %>
+<% } %>Terminal=false
+StartupNotify=true
+<% if (categories && categories.length) { %>Categories=<%= categories.join(';') %>;
+<% } %><% if (mimeType && mimeType.length) { %>MimeType=<%= mimeType.join(';') %>;
+<% } %>Keywords=music;amazon;streaming;audio;player;
