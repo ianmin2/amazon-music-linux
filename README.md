@@ -4,18 +4,16 @@ A standalone desktop app for Amazon Music Unlimited / Prime Music on Linux.
 
 Amazon Music streams are protected with Google Widevine, so this is built on
 [castLabs' Electron fork](https://github.com/castlabs/electron-releases), which ships a
-Widevine-enabled Chromium and the VMP signing tooling that DRM licence servers require.
+Widevine-enabled Chromium along with the component updater that keeps the CDM current.
 
 ## Requirements
 
 - Node.js 22.12 or newer
-- Python 3 with [`castlabs-evs`](https://pypi.org/project/castlabs-evs/) (only needed to package a
-  release build — see [VMP signing](#vmp-signing))
 
 ## Running from source
 
 ```
-git clone https://github.com/espaker/amazon-music-linux
+git clone https://github.com/ianmin2/amazon-music-linux
 cd amazon-music-linux
 npm install
 npm start
@@ -28,11 +26,10 @@ that it is cached under the app's user-data directory.
 ## Building a package
 
 ```
-npm run dist-linux
+npm run package-linux
 ```
 
-That runs `package-linux` (compiles, then bundles with `@electron/packager`) followed by
-`sign-linux`. The output lands in `release-builds/`.
+That compiles and bundles with `@electron/packager`. The output lands in `release-builds/`.
 
 Then, for a distro package:
 
@@ -46,20 +43,19 @@ Then, for a distro package:
   npx electron-installer-redhat --src release-builds/amazon-music-linux-linux-x64/ --arch x86_64 --config build-config.json
   ```
 
-### VMP signing
+### A note on VMP signing
 
-Widevine licence servers reject packaged builds whose executable is not VMP-signed. Running from
-source works without this because the castLabs Electron binary is already signed, but as soon as
-`electron-packager` rewrites the binary that signature is invalidated.
+You do not need it here, and there is no step to run. On Windows and macOS, castLabs' EVS service
+VMP-signs the packaged executable, and licence servers reject builds that lack a signature. Linux is
+different: [the Linux Widevine CDM does not support VMP](https://github.com/castlabs/electron-releases/wiki/EVS),
+so no signature is required and EVS does not sign Linux binaries at all. `evs-vmp sign-pkg` only
+looks for `.app` and `.exe` executables and will report `No matching executable found` if pointed at
+a Linux package directory.
 
-```
-pip install --upgrade castlabs-evs
-python3 -m castlabs_evs.account signup   # or: reauth, if you already have an account
-npm run sign-linux
-```
-
-Signing is free but requires a castLabs EVS account. Skipping it produces an app that starts fine
-and then fails at playback with a licence error.
+A Linux build therefore reports VMP status `PLATFORM_UNVERIFIED`, which castLabs documents as
+expected on this platform and is sufficient for the temporary licences streaming uses. The one thing
+Linux gives up is persistent licences, i.e. offline playback — which Amazon Music's web player does
+not offer anyway.
 
 ## Settings
 
@@ -86,10 +82,10 @@ your network, so only do that on a network you trust.
 
 ## Troubleshooting
 
-- **Playback fails with a licence/DRM error in a packaged build** — the app was not VMP-signed. See
-  [VMP signing](#vmp-signing).
-- **Playback fails when running from source** — check the startup log for `[widevine] components
-  ready:`. If component installation failed, the CDM could not be downloaded.
+- **Playback fails with a licence/DRM error** — check the startup log for `[widevine] components
+  ready:`. If component installation failed, the CDM could not be downloaded; it needs network
+  access on first launch. This is *not* a signing problem — see
+  [A note on VMP signing](#a-note-on-vmp-signing).
 - **Media keys or tray buttons do nothing** — Amazon changes the player's DOM regularly. Run
   **Playback → Dump Player Diagnostics to Log** from the menu bar and open an issue with the output;
   it lists every control the app can currently see.

@@ -11,9 +11,7 @@
         "watch": "tsc -w",
         "lint": "tsc --noEmit",
         "start": "npm run build && electron .",
-        "package-linux": "npm run build && electron-packager . amazon-music-linux --overwrite --asar --platform=linux --arch=x64 --icon=assets/favicon.png --prune=true --out=release-builds --ignore=\"^/(src|release-builds|\\.github|\\.git)\" --download.mirrorOptions.mirror=https://github.com/castlabs/electron-releases/releases/download/",
-        "sign-linux": "python3 -m castlabs_evs.vmp sign-pkg release-builds/amazon-music-linux-linux-x64",
-        "dist-linux": "npm run package-linux && npm run sign-linux"
+        "package-linux": "npm run build && electron-packager . amazon-music-linux --overwrite --asar --platform=linux --arch=x64 --icon=assets/favicon.png --prune=true --out=release-builds --ignore=\"^/(src|release-builds|\\.github|\\.git)\" --download.mirrorOptions.mirror=https://github.com/castlabs/electron-releases/releases/download/"
     },
     "repository": {
         "type": "git",
